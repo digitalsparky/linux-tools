@@ -1,0 +1,67 @@
+#!/bin/bash
+set -e
+
+###
+# Debian/Ubuntu based full updater script
+# Runs updates/upgrades system wide, including snaps and flatpak's with one command.
+# Installs and uses apt-fast with aria2 to significantly improve apt package download speeds.
+#
+# @author Matt Spurrier <matthew@spurrier.com.au> https://digitalsparky.com
+# @license GPLv3
+# @copyright Matt Spurrier (c) 2020, All Rights Reserved
+###
+
+# Make sure we're running as root, if not, run ourselves as root.
+if [ $EUID != 0 ]; then
+	sudo "$0" "$@"
+	exit $?
+fi
+
+# Check to see if apt-fast is installed, if not, install it
+# TODO: Automate the answers to the questions for this install (# of connections, whether to use apt-get, apt, or aptitude behind the scenes)
+if [ "$(which apt-fast || echo false)" == "false" ]; then
+	echo "apt-fast is missing from this system, installing via PPA"
+	add-apt-repository -y ppa:apt-fast/stable
+	apt-get update
+	apt-get install -y aria2 apt-fast
+fi
+
+APTCMD="apt-fast"
+
+# Don't run interactively
+export DEBIAN_FRONTEND=noninteractive
+
+# Debian/Ubuntu apt based updates/upgrades and subsequent cleanup
+echo "Updating lists"
+$APTCMD -qq update
+echo "Running Upgrade"
+$APTCMD -yqq upgrade
+echo "Running Distribution Upgrade"
+$APTCMD -yqq dist-upgrade
+echo "Auto removing un-needed packages"
+$APTCMD -yqq autoremove
+echo "Auto cleaning"
+$APTCMD -yqq autoclean
+
+# If snap is available, run a refresh to update
+if [ "$(which snap || echo false)" != "false" ]; then
+	echo "Refreshing snaps"
+	snap refresh
+fi
+
+# If flatpak is available, run an update for the current user
+# TODO: run this for all system users?
+if [ "$(which flatpak || echo false)" != "false" ]; then
+	echo "Updating flatpak's"
+	sudo -u $SUDO_USER flatpak update -y --noninteractive
+fi
+
+echo "Update complete"
+echo ""
+
+# If apt has completed and flagged a reboot is required, echo the reboot required message.
+if [[ -f /var/run/reboot-required ]]; then
+	echo ">> System restart required!!!"
+	echo ""
+fi
+
